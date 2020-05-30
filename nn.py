@@ -1,135 +1,80 @@
 import numpy as np
-from sklearn.datasets import fetch_openml
-from sklearn.metrics import classification_report, confusion_matrix
+from scipy import optimize
+from scipy.io import loadmat
+from sklearn.metrics import classification_report
+from predict import predict
+from gradientdescent import gradientDescentnn
+from cost import nnCostFunction
 
-input_layer_size  = 784  # 28x28 Input Images of Digits
-hidden_layer_size = 25   # 25 hidden units
-num_labels = 10          # 10 labels, from 1 to 10
+### IMPORTANT CONSTANTS ###
+input_layer_size = 784  # 28x28 Input Images of Digits
+hidden_layer_size = 64  # 25 hidden units
+num_labels = 10         # 10 classes, from 1 to 10
+EPSILON_INIT = 0.12     # used to randomly initialize weights between -0.1 and 0.1
+lambdaVal = 2           # regularization constant
 
 
-mnist = fetch_openml('mnist_784', version=1, cache=True)
-mnist.target = mnist.target.astype(np.int8) # fetch_openml() returns targets as strings
-X, y = mnist["data"], mnist["target"]
+### LOADING DATA ###
+mnist = loadmat('mnist-original.mat')
+X = mnist["data"]
+y = mnist["label"].ravel()
 
+# set the zero digit to 0, rather than its mapped 10 in this dataset
+# This is an artifact due to the fact that this dataset was used in
+# MATLAB where there is no index 0
+y[y == 10] = 0
 
-X = X / 255 # to normalize
+### NORMALIZE FEATURES ###
+X = (X / 255).T
 
-# one-hot encode labels
+### ONE - HOT ENCODE Y ###
 digits = 10
 examples = y.shape[0]
 y = y.reshape(1, examples)
 Y_new = np.eye(digits)[y.astype('int32')]
 Y_new = Y_new.T.reshape(digits, examples)
+Y_new = Y_new.T
 
-# split, reshape, shuffle
+
+### CREATE A TRAIN, VALIDATION, AND TEST SET ###
 m = 60000
-m_test = X.shape[0] - m
+m_test = 10000
 X_train, X_test = X[:m].T, X[m:].T
-Y_train, Y_test = Y_new[:,:m], Y_new[:,m:]
-shuffle_index = np.random.permutation(m)
-X_train, Y_train = X_train[:, shuffle_index], Y_train[:, shuffle_index]
+Y_train, Y_test = Y_new[:m], Y_new[m:]
+X_train = X_train.T
+X_test = X_test.T
+Y_test = Y_test.T
+Y_train = Y_train.T
 
-# initialization
-params = { "W1": np.random.randn(n_h, n_x) * np.sqrt(1. / n_x),
-           "b1": np.zeros((n_h, 1)) * np.sqrt(1. / n_x),
-           "W2": np.random.randn(digits, n_h) * np.sqrt(1. / n_h),
-           "b2": np.zeros((digits, 1)) * np.sqrt(1. / n_h) }
-
-V_dW1 = np.zeros(params["W1"].shape)
-V_db1 = np.zeros(params["b1"].shape)
-V_dW2 = np.zeros(params["W2"].shape)
-V_db2 = np.zeros(params["b2"].shape)
-
-def sigmoid(z):
-    s = 1. / (1. + np.exp(-z))
-    return s
-
-def compute_loss(Y, Y_hat):
-
-    L_sum = np.sum(np.multiply(Y, np.log(Y_hat)))
-    m = Y.shape[1]
-    L = -(1./m) * L_sum
-
-    return L
+### RANDOMLY INITIALIZE WEIGHTS ###
+theta_1 = np.random.rand(hidden_layer_size, 1 + input_layer_size) * 2 * EPSILON_INIT - EPSILON_INIT
+theta_2 = np.random.rand(num_labels, 1 + hidden_layer_size) * 2 * EPSILON_INIT - EPSILON_INIT
+random_nn_params = np.concatenate([theta_1.ravel(), theta_2.ravel()], axis=0)
 
 
+### RUN OPTIMIZATION ON WEIGHTS AND BIASES ###
+# nn_params = gradientDescentnn(X_train, Y_train, random_nn_params, 0.8, 80, lambdaVal, input_layer_size, hidden_layer_size, num_labels)
 
-def feed_forward(X, params):
+options = {'maxiter': 800}
 
-    cache = {}
+costFunction = lambda p: nnCostFunction(p, input_layer_size,
+                                        hidden_layer_size,
+                                        num_labels, X_train, Y_train, lambdaVal)
 
-    cache["Z1"] = np.matmul(params["W1"], X) + params["b1"]
-    cache["A1"] = sigmoid(cache["Z1"])
-    cache["Z2"] = np.matmul(params["W2"], cache["A1"]) + params["b2"]
-    cache["A2"] = np.exp(cache["Z2"]) / np.sum(np.exp(cache["Z2"]), axis=0)
+res = optimize.minimize(costFunction,
+                        random_nn_params,
+                        jac=True,
+                        method='TNC',
+                        options=options)
 
-    return cache
+nn_params = res.x
 
-def back_propagate(X, Y, params, cache):
+# Obtain Theta1 and Theta2 back from nn_params
+Theta1 = np.reshape(nn_params[:hidden_layer_size * (input_layer_size + 1)],
+                    (hidden_layer_size, (input_layer_size + 1)))
 
-    dZ2 = cache["A2"] - Y
-    dW2 = (1./m_batch) * np.matmul(dZ2, cache["A1"].T)
-    db2 = (1./m_batch) * np.sum(dZ2, axis=1, keepdims=True)
+Theta2 = np.reshape(nn_params[(hidden_layer_size * (input_layer_size + 1)):],
+                    (num_labels, (hidden_layer_size + 1)))
 
-    dA1 = np.matmul(params["W2"].T, dZ2)
-    dZ1 = dA1 * sigmoid(cache["Z1"]) * (1 - sigmoid(cache["Z1"]))
-    dW1 = (1./m_batch) * np.matmul(dZ1, X.T)
-    db1 = (1./m_batch) * np.sum(dZ1, axis=1, keepdims=True)
-
-    grads = {"dW1": dW1, "db1": db1, "dW2": dW2, "db2": db2}
-
-    return grads
-
-np.random.seed(138)
-
-# hyperparameters
-n_x = X_train.shape[0]
-n_h = 64
-learning_rate = 4
-beta = .9
-batch_size = 128
-batches = -(-m // batch_size)
-
-
-
-# train
-for i in range(20):
-
-    permutation = np.random.permutation(X_train.shape[1])
-    X_train_shuffled = X_train[:, permutation]
-    Y_train_shuffled = Y_train[:, permutation]
-
-    for j in range(batches):
-
-        begin = j * batch_size
-        end = min(begin + batch_size, X_train.shape[1] - 1)
-        X = X_train_shuffled[:, begin:end]
-        Y = Y_train_shuffled[:, begin:end]
-        m_batch = end - begin
-
-        cache = feed_forward(X, params)
-        grads = back_propagate(X, Y, params, cache)
-
-        V_dW1 = (beta * V_dW1 + (1. - beta) * grads["dW1"])
-        V_db1 = (beta * V_db1 + (1. - beta) * grads["db1"])
-        V_dW2 = (beta * V_dW2 + (1. - beta) * grads["dW2"])
-        V_db2 = (beta * V_db2 + (1. - beta) * grads["db2"])
-
-        params["W1"] = params["W1"] - learning_rate * V_dW1
-        params["b1"] = params["b1"] - learning_rate * V_db1
-        params["W2"] = params["W2"] - learning_rate * V_dW2
-        params["b2"] = params["b2"] - learning_rate * V_db2
-
-    cache = feed_forward(X_train, params)
-    train_cost = compute_loss(Y_train, cache["A2"])
-    cache = feed_forward(X_test, params)
-    test_cost = compute_loss(Y_test, cache["A2"])
-    print("Epoch {}: training cost = {}, test cost = {}".format(i+1 ,train_cost, test_cost))
-
-print("Done.")
-
-cache = feed_forward(X_test, params)
-predictions = np.argmax(cache["A2"], axis=0)
-labels = np.argmax(Y_test, axis=0)
-
-print(classification_report(predictions, labels))
+### DETERMINE ACCURACY ###
+print(classification_report(predict(Theta1, Theta2, X_test), np.argmax(Y_test, axis=0)))
