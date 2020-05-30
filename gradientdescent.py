@@ -7,15 +7,21 @@ def gradientDescentnn(X, y, initial_nn_params, alpha, num_iters, Lambda, input_l
                                                                                       input_layer_size + 1)
     Theta2 = initial_nn_params[((input_layer_size + 1) * hidden_layer_size):].reshape(num_labels, hidden_layer_size + 1)
 
-    m = len(y)
+    V_dT1 = np.zeros(Theta1.shape)
+    V_dT2 = np.zeros(Theta2.shape)
+    beta = .9
 
     for i in range(num_iters):
         nn_params = np.append(Theta1.flatten(), Theta2.flatten())
         cost, grad1, grad2 = nnCostFunction(nn_params, input_layer_size, hidden_layer_size, num_labels, X, y, Lambda)
-        Theta1 = Theta1 - (alpha * grad1)
-        Theta2 = Theta2 - (alpha * grad2)
 
-        if i % 16 == 0:
-            print(cost)
+        V_dT1 = (beta * V_dT1) + (1. - beta) * grad1
+        V_dT2 = (beta * V_dT2) + (1. - beta) * grad2
 
-    return np.append(Theta1.flatten(), Theta2.flatten())
+        Theta1 = Theta1 - (alpha * V_dT1)
+        Theta2 = Theta2 - (alpha * V_dT2)
+
+        if i % 100 == 0:
+            print("Epoch {}: test cost = {}".format(i, cost))
+
+    return Theta1, Theta2

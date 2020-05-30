@@ -14,11 +14,11 @@ def nnCostFunction(nn_params,
     theta_2 = np.reshape(nn_params[(hidden_layer_size * (input_layer_size + 1)):],
                         (num_labels, (hidden_layer_size + 1)))
 
-    a1 = np.c_[np.ones(m),X_train]
+    a1 = np.c_[np.ones(m), X_train]
     z2 = np.dot(theta_1, a1.T)
     a2 = np.c_[np.ones(m), sigmoid(z2).T]
     z3 = np.dot(theta_2, a2.T)
-    hypothesis = sigmoid(z3)
+    hypothesis = np.exp(z3) / np.sum(np.exp(z3), axis=0)  # softmax is a generalization of logistic
 
     firsthalf = -1 * np.multiply(Y_train, np.log(hypothesis))
     secondhalf = np.multiply((1 - Y_train), np.log(1 - hypothesis))
@@ -39,7 +39,5 @@ def nnCostFunction(nn_params,
     theta1_grad = delta1 / m + (theta1_ * lambdaVal) / m
     theta2_grad = delta2 / m + (theta2_ * lambdaVal) / m
 
-    grad = np.concatenate([theta1_grad.ravel(), theta2_grad.ravel()])
+    return cost, theta1_grad, theta2_grad
 
-    # return cost, theta1_grad, theta2_grad
-    return cost, grad
